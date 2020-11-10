@@ -3,15 +3,16 @@
 //
 
 
-#define DEBUG 0
+//#define DEBUG
+#define DEBUG_2
 
 #include "Joystick.h"
 #include <SPI.h>
+#include <Wire.h>
 
-#define MAXBUTTONS 24
+#define MAXBUTTONS 11
+#define MAXANALOG 3
 #define MAXJOYSTICKS 5
-#define HALFPERIOD 25
-#define SPICLOCKSPEED 25//in SPI data transfer in Hz
 
 #define throttleInner_pin A6
 #define throttleOuter_pin A3
@@ -28,8 +29,12 @@
 
 enum dataStream{CAGE_UNCAGE = 0, DISPENSE_FWD, DISPENSE_AFT, SPEEDBRAKE_EXTEND, SPEEDBRAKE_RETRACT, TDC_DEPRESS, 
                 COMS_UP, COMS_RIGHT, COMS_DOWN, COMS_LEFT, COMS_DEPRESS} buttonDataStream;
-                
-const uint8_t useSPI = 1;
+String pinsName[] = {" Cage:"," DISP_FW:"," DISP_AFT:"," SB_EXT:"," SB_RET:"," TDC DEP:"," Coms_UP:", " Coms_Right:", " Coms_Down:", " Coms_Left:", " Coms_Depress:"};
+String analogName[] = {" TDC X:"," TDC Y:"," ANT_ELV:"};
+volatile bool buttonState[2][MAXBUTTONS];
+volatile uint16_t analogArray[MAXANALOG];
+
+enum dataCommands{SENDDATA = 0, SETUP};
 
 // Create Joystick
 Joystick_ Joystick;
@@ -308,7 +313,12 @@ while(true)
     #endif
 
     //Get the button states and other analog values from the grip
+    getButtonData();
+    #ifdef DEBUG_2
+      printData();
+    #endif
 
+    delay(500);
     //Add in the last two buttons, and the light toggle switch.
 
 
@@ -319,10 +329,72 @@ while(true)
     #endif
     
     #ifndef DEBUG
-    Joystick.sendState();
+  //  Joystick.sendState();
     #endif
-    //  Turn indicator light on.
-    digitalWrite(13, 1);
+
   }
 
+}
+
+void getButtonData()
+{
+  uint8_t i=0;
+  uint8_t analogCounter = 0;
+  uint8_t buttonCounter = 0;
+  uint8_t outArray[2];
+  Wire.beginTransmission(4);
+  Wire.write(SENDDATA);
+  Wire.endTransmission();
+
+  #ifdef DEBUG
+    Serial.println("Getting I2C Data");
+  #endif
+  
+  //Get the Data
+  Wire.requestFrom(0x04,((MAXANALOG<<2) + MAXBUTTONS));
+
+  while(Wire.available())
+  {
+    if( i<MAXANALOG<<2)
+    {
+      outArray[0] = Wire.read();
+      outArray[1] = Wire.read();
+      analogArray[analogCounter] = convertFromBytes(outArray);
+      analogCounter++;
+      
+    }
+    else if(i<MAXANALOG<<2+MAXBUTTONS)
+    {
+    buttonState[0][buttonCounter]= Wire.read();
+    }
+    else
+    {
+      Serial.println("ERRROR, to many responses to I2C Request");
+    }
+    i++;
+  }
+}
+
+uint16_t convertFromBytes(uint8_t *outArray)
+{
+  uint16_t value;
+  value = outArray[1] << 8 + outArray[0];
+}
+
+void printData()
+{
+  uint8_t i;
+  
+  for (i=0;i<MAXBUTTONS;i++)
+    {
+      Serial.print(analogName[i]);
+      Serial.print(analogArray[i]);
+    }
+
+  Serial.println("");
+  for (i=0;i<MAXBUTTONS;i++)
+    {
+      Serial.print(pinsName[i]);
+      Serial.print(buttonState[0][i]);
+    }
 }
