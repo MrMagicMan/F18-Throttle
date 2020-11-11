@@ -1,7 +1,7 @@
 #include <Wire.h>
 
 
-#define DEBUG
+//#define DEBUG
 //#define DEBUG_LVL2
 
 #define MAXBUTTONS 11
@@ -74,8 +74,8 @@ class thrustmasterStick
 void setup() {
 
   Wire.begin(4);
-  Wire.onReceive(receiveHandler);
-  Wire.onRequest(requestHandler);
+  Wire.onReceive(I2CreceiveHandler);
+  Wire.onRequest(I2CrequestHandler);
 
   Serial.begin(9600);
   Serial.println("Inner Throttle Test");
@@ -185,7 +185,7 @@ void loop()
 }
 
 
-void receiveHandler(int sizeofRequest)
+void I2CreceiveHandler(int sizeofRequest)
 {
   if(Wire.available()>0)
   {
@@ -193,28 +193,28 @@ void receiveHandler(int sizeofRequest)
   }
 }
 
-void requestHandler()
+void I2CrequestHandler()
 {
   
   int i;
   uint8_t outArray[2];
 
   #ifdef DEBUG_LVL2
-    Serial.print("RequestHandler");
+    Serial.println("RequestHandler");
   #endif
   
 
   //Send the analog Sticks
   for (i=0;i<MAXANALOG;i++)
   { 
-    convertToBytes(analogArray[AntennaElevationDirection],outArray);
+    convertToBytes(analogArray[i],outArray);
     Wire.write(outArray[0]);
     Wire.write(outArray[1]);
   }
-  
+
   //Send the buttons
   for (i=0;i<sizeofpinsArray;i++)
-  {
+  {    
     Wire.write(buttonState[0][i]);
   }
 }

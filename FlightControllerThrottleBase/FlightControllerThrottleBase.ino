@@ -4,7 +4,7 @@
 
 
 //#define DEBUG
-#define DEBUG_2
+//#define DEBUG_2
 
 #include "Joystick.h"
 #include <SPI.h>
@@ -16,9 +16,9 @@
 
 #define throttleInner_pin A6
 #define throttleOuter_pin A3
-#define dataPin  14 //TBD 
+#define dataPin  2 //TBD 
 #define loadPin  10 //TBD
-#define clockPin  15 //TBD
+#define clockPin  3 //TBD
 #define slaveSelectPin 10;
 
 #define tdcXDirection 0
@@ -32,7 +32,7 @@ enum dataStream{CAGE_UNCAGE = 0, DISPENSE_FWD, DISPENSE_AFT, SPEEDBRAKE_EXTEND, 
 String pinsName[] = {" Cage:"," DISP_FW:"," DISP_AFT:"," SB_EXT:"," SB_RET:"," TDC DEP:"," Coms_UP:", " Coms_Right:", " Coms_Down:", " Coms_Left:", " Coms_Depress:"};
 String analogName[] = {" TDC X:"," TDC Y:"," ANT_ELV:"};
 volatile bool buttonState[2][MAXBUTTONS];
-volatile uint16_t analogArray[MAXANALOG];
+volatile int16_t analogArray[MAXANALOG];
 
 enum dataCommands{SENDDATA = 0, SETUP};
 
@@ -75,14 +75,7 @@ void parallelLoad()
   digitalWrite(loadPin,HIGH);
 }
 
-bool readValue()
-{
-  //Set the clock high
-  digitalWrite(clockPin, HIGH);
 
-  //Read the value
-  return(digitalRead(dataPin));
-}
 
 
 
@@ -241,28 +234,29 @@ void testXYZAxisRotation(unsigned int degree)
 void setup() {
 
   // Set Range Values
-  Joystick.setXAxisRange(60, 807);
-  Joystick.setYAxisRange(-127, 127);
-  Joystick.setZAxisRange(-127, 127);
+  Joystick.setXAxisRange(-172, 172);
+  Joystick.setYAxisRange(-172, 172);
+  Joystick.setZAxisRange(-76, 76);
   Joystick.setRxAxisRange(60, 807);
   Joystick.setRyAxisRange(360, 0);
   Joystick.setRzAxisRange(0, 720);
   Joystick.setThrottleRange(0, 255);
   Joystick.setRudderRange(255, 0);
   
-  Joystick.begin();
 
-  Wire.begin();        // join i2c bus (address optional for master)
   
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("Joystick Test");
   
-  pinMode(dataPin, INPUT);
-  pinMode(loadPin, OUTPUT);
-  pinMode(clockPin, OUTPUT);
+   Joystick.begin();
+
+  Wire.begin();        // join i2c bus (address optional for master)  
+  //pinMode(dataPin, INPUT);
+  //pinMode(loadPin, OUTPUT);
+  //pinMode(clockPin, OUTPUT);
   pinMode(throttleInner_pin, INPUT_PULLUP);
   pinMode(throttleOuter_pin, INPUT_PULLUP);
-  pinMode(13, OUTPUT);
+ // pinMode(13, OUTPUT);
 
 
 
@@ -274,17 +268,29 @@ void loop()
   uint32_t serialShiftData;
   int i = 0;
 
-  uint16_t intialoffset[MAXJOYSTICKS];
-  const int8_t scaleFactor[]= {1,1,1,1,1};
+  int16_t intialoffset[MAXJOYSTICKS];
+  const int8_t scaleFactor[]= {1,-1,1,1,1};
 
-  
+  //Make sure everything is up and then calibarate
+
+     
   intialoffset[innerThrottleDirection] = 0;
   intialoffset[outerThrottleDirection] = 0;
+  
+  getButtonData();
+  while(analogArray[tdcXDirection]==0)
+  {
+    getButtonData();
+  }
+  delay(10);
+  intialoffset[tdcXDirection] = analogArray[tdcXDirection];
+  intialoffset[tdcYDirection] = analogArray[tdcXDirection];
+  intialoffset[antennaElevationDirection] = analogArray[antennaElevationDirection];
 
   
-while(true)
-{
   
+while(true)
+  {
     //Read the two throttle quandrant positions.
     
     adcValue = analogRead(throttleInner_pin);
@@ -318,7 +324,44 @@ while(true)
       printData();
     #endif
 
-    delay(500);
+
+    //Set the joysticks
+    Joystick.setXAxis(scaleFactor[tdcXDirection]*(analogArray[tdcXDirection]-intialoffset[tdcXDirection]));
+    Joystick.setYAxis(scaleFactor[tdcYDirection]*(analogArray[tdcYDirection]-intialoffset[tdcYDirection]));
+    Joystick.setZAxis(scaleFactor[antennaElevationDirection]*(analogArray[antennaElevationDirection]-intialoffset[antennaElevationDirection]));
+
+     //Compare Button states
+    for (i=0;i<MAXBUTTONS;i++)
+    {
+      //buttonState[0][i] = !digitalRead(pinsArray[i]);
+
+    #ifdef DEBUG
+      Serial.print(pinsName[i]);
+      Serial.print(buttonState[0][i]);
+    #endif
+
+      if(buttonState[1][i] != buttonState[0][i])
+      {
+        //Something changed
+          if(buttonState[0][i] == 1)
+          {
+            //This is the change to ON
+            Joystick.pressButton(i);
+          }else
+          {
+            //This is a change to OFF
+            Joystick.releaseButton(i);
+          }
+
+         buttonState[1][i] = buttonState[0][i];
+      }
+    }
+    
+    #ifdef DEBUG
+      Serial.println("");
+    #endif
+    
+    
     //Add in the last two buttons, and the light toggle switch.
 
 
@@ -329,7 +372,7 @@ while(true)
     #endif
     
     #ifndef DEBUG
-  //  Joystick.sendState();
+      Joystick.sendState();
     #endif
 
   }
@@ -342,20 +385,20 @@ void getButtonData()
   uint8_t analogCounter = 0;
   uint8_t buttonCounter = 0;
   uint8_t outArray[2];
-  Wire.beginTransmission(4);
-  Wire.write(SENDDATA);
-  Wire.endTransmission();
+  //Wire.beginTransmission(0x04);
+  //Wire.write(0x01);
+  //Wire.endTransmission();
 
   #ifdef DEBUG
     Serial.println("Getting I2C Data");
   #endif
-  
+
   //Get the Data
-  Wire.requestFrom(0x04,((MAXANALOG<<2) + MAXBUTTONS));
+  Wire.requestFrom(0x04,((MAXANALOG<<1) + MAXBUTTONS));
 
   while(Wire.available())
   {
-    if( i<MAXANALOG<<2)
+    if( i<MAXANALOG)
     {
       outArray[0] = Wire.read();
       outArray[1] = Wire.read();
@@ -363,9 +406,10 @@ void getButtonData()
       analogCounter++;
       
     }
-    else if(i<MAXANALOG<<2+MAXBUTTONS)
+    else if(i<MAXANALOG+MAXBUTTONS)
     {
-    buttonState[0][buttonCounter]= Wire.read();
+      buttonState[0][buttonCounter]= Wire.read();
+      buttonCounter++;
     }
     else
     {
@@ -378,23 +422,29 @@ void getButtonData()
 uint16_t convertFromBytes(uint8_t *outArray)
 {
   uint16_t value;
-  value = outArray[1] << 8 + outArray[0];
+  value = outArray[1];
+  value = value << 8;
+  value += outArray[0];
+  return(value);
 }
 
 void printData()
 {
   uint8_t i;
-  
-  for (i=0;i<MAXBUTTONS;i++)
+  Serial.print ("Values are ");
+  for (i=0;i<MAXANALOG;i++)
     {
-      Serial.print(analogName[i]);
+      Serial.print(analogName[i]); 
+      Serial.print(" ");
       Serial.print(analogArray[i]);
+      Serial.print(" ");
     }
-
-  Serial.println("");
   for (i=0;i<MAXBUTTONS;i++)
     {
       Serial.print(pinsName[i]);
+      Serial.print(" ");
       Serial.print(buttonState[0][i]);
+      Serial.print(" ");
     }
+    Serial.println("");
 }
