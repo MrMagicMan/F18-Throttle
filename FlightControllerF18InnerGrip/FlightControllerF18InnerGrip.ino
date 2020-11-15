@@ -3,9 +3,11 @@
 
 //#define DEBUG
 //#define DEBUG_LVL2
+//#define DEBUG_LVL3  //average values, and sums
 
 #define MAXBUTTONS 11
 #define MAXANALOG 3
+#define ANALOGMAXSAMPLES 50
 
 #define joystickXPin A3
 #define joystickYPin A2
@@ -43,6 +45,7 @@ uint8_t sizeofpinsArray = sizeof(pinsArray)/sizeof(pinsArray[0]);
 volatile bool buttonState[2][MAXBUTTONS];
 volatile uint16_t analogArray[MAXANALOG];
 
+
 enum dataCommands{SENDDATA = 0, SETUP};
 volatile dataCommands I2CCommand;
 
@@ -70,6 +73,39 @@ class thrustmasterStick
 };
 
 
+void updateAverageArray(uint16_t analogArray[MAXANALOG][ANALOGMAXSAMPLES],uint8_t analogChannel, uint16_t newValue)
+{
+  uint8_t i;
+
+  for (i=ANALOGMAXSAMPLES-1;i>0;i--)
+  {
+    analogArray[analogChannel][i] = analogArray[analogChannel][i-1];
+
+  }
+  analogArray[analogChannel][0] = newValue;
+}
+
+uint16_t getArrayAverage(uint16_t analogArray[MAXANALOG][ANALOGMAXSAMPLES],uint8_t analogChannel)
+{
+  uint8_t i;
+  uint32_t averageValue=0;
+
+  for (i=0;i<ANALOGMAXSAMPLES;i++)
+  {
+    averageValue += analogArray[analogChannel][i];
+  }
+  averageValue = averageValue/ANALOGMAXSAMPLES;
+
+  #ifdef DEBUG_LVL3
+   Serial.print("Channel ");
+   Serial.print(analogChannel);
+   Serial.print(" AVG: ");
+   Serial.println(averageValue);
+  #endif
+  return(averageValue);
+ 
+}
+
 
 void setup() {
 
@@ -77,7 +113,7 @@ void setup() {
   Wire.onReceive(I2CreceiveHandler);
   Wire.onRequest(I2CrequestHandler);
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("Inner Throttle Test");
  
   pinMode(comsUpPin, INPUT_PULLUP);
@@ -101,7 +137,7 @@ void setup() {
  int16_t adcValue;
 void loop() 
 {
-  
+  volatile uint16_t analogArrayAverage[MAXANALOG][ANALOGMAXSAMPLES];
   uint32_t serialShiftData;
   int i = 0;
 
@@ -118,7 +154,9 @@ void loop()
   
     adcValue = analogRead(joystickXPin);
     //adcValue = scaleFactor[XDirection]*(adcValue - intialoffset[XDirection]);
-    analogArray[XDirection] = adcValue;
+    
+    updateAverageArray(analogArrayAverage, XDirection, adcValue);
+    analogArray[XDirection] = getArrayAverage(analogArrayAverage,XDirection);
     #ifdef DEBUG
     Serial.print("Joystick X: ");
     if (adcValue>=0)
@@ -129,7 +167,9 @@ void loop()
     #endif
     adcValue = analogRead(joystickYPin);
     //adcValue = scaleFactor[YDirection]*(adcValue - intialoffset[YDirection]);
-    analogArray[YDirection] = adcValue;
+    updateAverageArray(analogArrayAverage, YDirection, adcValue);
+    analogArray[YDirection] = getArrayAverage(analogArrayAverage,YDirection);
+
     #ifdef DEBUG
     Serial.print(" Joystick Y: ");
     if (adcValue>=0)
@@ -140,7 +180,9 @@ void loop()
     #endif
     adcValue = analogRead(AntennaElevation_Pin);
     //adcValue = scaleFactor[AntennaElevationDirection]*(adcValue - intialoffset[AntennaElevationDirection]);
-    analogArray[AntennaElevationDirection] = adcValue;
+    updateAverageArray(analogArrayAverage, AntennaElevationDirection, adcValue);
+    analogArray[AntennaElevationDirection] = getArrayAverage(analogArrayAverage,AntennaElevationDirection);
+
     
     #ifdef DEBUG
     Serial.print(" Antenna Elevation: ");
